@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Pixel Quest</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: #121212;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #0ff;
+            color: #ff00ff;
+        }
+        
+        #game-container {
+            position: relative;
+            margin: 20px 0;
+        }
+        
+        canvas {
+            background: #000;
+            border: 2px solid #ff00ff;
+            box-shadow: 0 0 20px #ff00ff;
+        }
+        
+        #score-container {
+            display: flex;
+            justify-content: space-between;
+            width: 480px;
+            margin-bottom: 10px;
+        }
+        
+        #instructions {
+            width: 480px;
+            margin-top: 20px;
+            text-align: center;
+            color: #0ff;
+        }
+        
+        #game-over, #level-up {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border: 2px solid #ff00ff;
+            display: none;
+        }
+        
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #ff00ff;
+            color: #000;
+            border: none;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #0ff;
+            box-shadow: 0 0 15px #0ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>RETRO PIXEL QUEST</h1>
+    
+    <div id="score-container">
+        <div>Score: <span id="score">0</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+        <div>Level: <span id="level">1</span></div>
+    </div>
+    
+    <div id="game-container">
+        <canvas id="gameCanvas" width="480" height="320"></canvas>
+        <div id="game-over">
+            GAME OVER<br>
+            <span id="final-score">0</span><br>
+            <button id="restart-btn">PLAY AGAIN</button>
+        </div>
+        <div id="level-up">
+            LEVEL UP!<br>
+            <button id="continue-btn">CONTINUE</button>
+        </div>
+    </div>
+    
+    <div id="instructions">
+        Use arrow keys to move. Collect coins, break blocks, avoid enemies!<br>
+        Unique Twist: Your paddle becomes a platformer character that can break blocks from below!
+    </div>
+
+    <script>
+        // Game elements
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const livesEl = document.getElementById('lives');
+        const levelEl = document.getElementById('level');
+        const gameOverScreen = document.getElementById('game-over');
+        const finalScoreEl = document.getElementById('final-score');
+        const restartBtn = document.getElementById('restart-btn');
+        const levelUpScreen = document.getElementById('level-up');
+        const continueBtn = document.getElementById('continue-btn');
+        
+        // Game state
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let gameRunning = true;
+        
+        // Player properties
+        const player = {
+            x: canvas.width / 2 - 30,
+            y: canvas.height - 20,
+            width: 60,
+            height: 15,
+            speed: 7,
+            dx: 0,
+            color: '#ff00ff'
+        };
+        
+        // Ball properties
+        const ball = {
+            x: canvas.width / 2,
+            y: canvas.height - 35,
+            radius: 8,
+            speed: 5,
+            dx: 5 * (Math.random() > 0.5 ? 1 : -1),
+            dy: -5,
+            color: '#00ffff'
+        };
+        
+        // Blocks and coins
+        let blocks = [];
+        let coins = [];
+        let enemies = [];
+        
+        // Create blocks
+        function createBlocks() {
+            blocks = [];
+            const rows = 3 + level;
+            const cols = 8;
+            const blockWidth = 55;
+            const blockHeight = 20;
+            const padding = 5;
+            const offsetTop = 30;
+            const offsetLeft = 15;
+            
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    blocks.push({
+                        x: c * (blockWidth + padding) + offsetLeft,
+                        y: r * (blockHeight + padding) + offsetTop,
+                        width: blockWidth,
+                        height: blockHeight,
+                        color: `hsl(${r * 30 + c * 10}, 100%, 50%)`,
+                        visible: true
+                    });
+                }
+            }
+        }
+        
+        // Create coins
+        function createCoins() {
+            coins = [];
+            for (let i = 0; i < 5; i++) {
+                coins.push({
+                    x: Math.random() * (canvas.width - 20) + 10,
+                    y: Math.random() * (canvas.height / 2) + 20,
+                    radius: 8,
+                    color: '#ffff00',
+                    visible: true
+                });
+            }
+        }
+        
+        // Create enemies
+        function createEnemies() {
+            enemies = [];
+            for (let i = 0; i < level; i++) {
+                enemies.push({
+                    x: Math.random() * (canvas.width - 20) + 10,
+                    y: Math.random() * (canvas.height / 3) + 20,
+                    width: 20,
+                    height: 20,
+                    speed: 2 + level,
+                    dx: (Math.random() > 0.5 ? 1 : -1) * (2 + level/2),
+                    color: '#ff0000'
+                });
+            }
+        }
+        
+        // Draw player
+        function drawPlayer() {
+            ctx.beginPath();
+            ctx.rect(player.x, player.y, player.width, player.height);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.closePath();
+            
+            // Draw glow effect
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = player.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        
+        // Draw ball
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            ctx.closePath();
+            
+            // Draw glow effect
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = ball.color;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        
+        // Draw blocks
+        function drawBlocks() {
+            blocks.forEach(block => {
+                if (block.visible) {
+                    ctx.beginPath();
+                    ctx.rect(block.x, block.y, block.width, block.height);
+                    ctx.fillStyle = block.color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            });
+        }
+        
+        // Draw coins
+        function drawCoins() {
+            coins.forEach(coin => {
+                if (coin.visible) {
+                    ctx.beginPath();
+                    ctx.arc(coin.x, coin.y, coin.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = coin.color;
+                    ctx.fill();
+                    ctx.closePath();
+                    
+                    // Draw glow effect
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = coin.color;
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            });
+        }
+        
+        // Draw enemies
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.beginPath();
+                ctx.rect(enemy.x, enemy.y, enemy.width, enemy.height);
+                ctx.fillStyle = enemy.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // Draw glow effect
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = enemy.color;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            });
+        }
+        
+        // Move player
+        function movePlayer() {
+            player.x += player.dx;
+            
+            // Wall collision
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+        }
+        
+        // Move ball
+        function moveBall() {
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+            
+            // Wall collision (right/left)
+            if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+                ball.dx *= -1;
+            }
+            
+            // Wall collision (top)
+            if (ball.y - ball.radius < 0) {
+                ball.dy *= -1;
+            }
+            
+            // Bottom wall - Game Over
+            if (ball.y + ball.radius > canvas.height) {
+                lives--;
+                livesEl.textContent = lives;
+                resetBall();
+                
+                if (lives <= 0) {
+                    gameOver();
+                }
+            }
+            
+            // Paddle collision
+            if (
+                ball.y + ball.radius > player.y &&
+                ball.x > player.x &&
+                ball.x < player.x + player.width
+            ) {
+                ball.dy = -Math.abs(ball.dy); // Always bounce up
+                ball.dx = (ball.x - (player.x + player.width/2)) * 0.2; // Angle based on hit position
+            }
+            
+            // Block collision
+            blocks.forEach(block => {
+                if (
+                    block.visible &&
+                    ball.x + ball.radius > block.x &&
+                    ball.x - ball.radius < block.x + block.width &&
+                    ball.y + ball.radius > block.y &&
+                    ball.y - ball.radius < block.y + block.height
+                ) {
+                    ball.dy *= -1;
+                    block.visible = false;
+                    score += 10;
+                    scoreEl.textContent = score;
+                    
+                    // Check if all blocks are gone
+                    if (blocks.every(block => !block.visible)) {
+                        levelUp();
+                    }
+                }
+            });
+            
+            // Coin collision
+            coins.forEach(coin => {
+                if (
+                    coin.visible &&
+                    ball.x + ball.radius > coin.x - coin.radius &&
+                    ball.x - ball.radius < coin.x + coin.radius &&
+                    ball.y + ball.radius > coin.y - coin.radius &&
+                    ball.y - ball.radius < coin.y + coin.radius
+                ) {
+                    coin.visible = false;
+                    score += 50;
+                    scoreEl.textContent = score;
+                }
+            });
+        }
+        
+        // Move enemies
+        function moveEnemies() {
+            enemies.forEach(enemy => {
+                enemy.x += enemy.dx;
+                
+                // Wall collision
+                if (enemy.x < 0 || enemy.x + enemy.width > canvas.width) {
+                    enemy.dx *= -1;
+                }
+                
+                // Ball collision
+                if (
+                    ball.x + ball.radius > enemy.x &&
+                    ball.x - ball.radius < enemy.x + enemy.width &&
+                    ball.y + ball.radius > enemy.y &&
+                    ball.y - ball.radius < enemy.y + enemy.height
+                ) {
+                    enemy.dx *= -1;
+                    ball.dy *= -1;
+                    score += 20;
+                    scoreEl.textContent = score;
+                }
+            });
+        }
+        
+        // Reset ball
+        function resetBall() {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height - 35;
+            ball.dx = 5 * (Math.random() > 0.5 ? 1 : -1);
+            ball.dy = -5;
+        }
+        
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            finalScoreEl.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+        
+        // Level up
+        function levelUp() {
+            gameRunning = false;
+            levelUpScreen.style.display = 'block';
+        }
+        
+        // Next level
+        function nextLevel() {
+            level++;
+            levelEl.textContent = level;
+            ball.speed += 0.5;
+            resetBall();
+            createBlocks();
+            createCoins();
+            createEnemies();
+            levelUpScreen.style.display = 'none';
+            gameRunning = true;
+        }
+        
+        // Restart game
+        function restartGame() {
+            score = 0;
+            lives = 3;
+            level = 1;
+            scoreEl.textContent = score;
+            livesEl.textContent = lives;
+            levelEl.textContent = level;
+            ball.speed = 5;
+            resetBall();
+            createBlocks();
+            createCoins();
+            createEnemies();
+            gameOverScreen.style.display = 'none';
+            gameRunning = true;
+        }
+        
+        // Key down event
+        function keyDown(e) {
+            if (e.key === 'ArrowRight' || e.key === 'Right') {
+                player.dx = player.speed;
+            } else if (e.key === 'ArrowLeft' || e.key === 'Left') {
+                player.dx = -player.speed;
+            }
+        }
+        
+        // Key up event
+        function keyUp(e) {
+            if (
+                e.key === 'ArrowRight' ||
+                e.key === 'Right' ||
+                e.key === 'ArrowLeft' ||
+                e.key === 'Left'
+            ) {
+                player.dx = 0;
+            }
+        }
+        
+        // Initialize game
+        function init() {
+            createBlocks();
+            createCoins();
+            createEnemies();
+            
+            // Event listeners
+            document.addEventListener('keydown', keyDown);
+            document.addEventListener('keyup', keyUp);
+            restartBtn.addEventListener('click', restartGame);
+            continueBtn.addEventListener('click', nextLevel);
+            
+            // Game loop
+            function loop() {
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (gameRunning) {
+                    // Draw game elements
+                    drawPlayer();
+                    drawBall();
+                    drawBlocks();
+                    drawCoins();
+                    drawEnemies();
+                    
+                    // Move elements
+                    movePlayer();
+                    moveBall();
+                    moveEnemies();
+                }
+                
+                // Request animation frame
+                requestAnimationFrame(loop);
+            }
+            
+            // Start game loop
+            loop();
+        }
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
